@@ -7,18 +7,23 @@ A Unity project for creating dynamic, volumetric clouds and atmospheric scatteri
 ## Weather Presets
 
 **Light Clouds** - Scattered, wispy clouds with bright atmospheric scattering
+
 ![Light Clouds](demo/light_clouds.gif)
 
 **Dense Clouds** - Thick, voluminous cloud formations with reduced visibility
+
 ![Dense Clouds](demo/dense_clouds.gif)
 
 **Stormy Clouds** - Dark, heavy clouds with dramatic lighting and high density
+
 ![Stormy Clouds](demo/stormy_clouds.gif)
 
 **Ground Fog** - Low-lying fog effect perfect for atmospheric ground-level scenes
+
 ![Ground Fog](demo/ground_fog.gif)
 
 **Sunset Clouds** - Warm, golden-hour clouds
+
 ![Sunset Clouds](demo/sunset_clouds.gif)
 
 ## Technical Features
