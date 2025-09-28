@@ -56,7 +56,6 @@ Shader "Custom/Volumetric"
                 float3 viewVector : TEXCOORD1;
             };
             
-            // Properties
             sampler2D _MainTex;
             sampler2D _PreviousFrame;
             sampler2D _CameraDepthTexture;
@@ -69,7 +68,7 @@ Shader "Custom/Volumetric"
             float _LightIntensity;
             float3 _LightDirection;
             
-            // Cloud parameters
+            // cloud parameters
             float _CloudBaseHeight;
             float _CloudTopHeight;
             float _CloudCoverage;
@@ -105,7 +104,7 @@ Shader "Custom/Volumetric"
             {
                 float3 i = floor(p);
                 float3 f = frac(p);
-                f = f * f * (3.0 - 2.0 * f); // Smooth interpolation
+                f = f * f * (3.0 - 2.0 * f);
                 
                 return lerp(lerp(lerp(hash(i + float3(0, 0, 0)), 
                                     hash(i + float3(1, 0, 0)), f.x),
@@ -142,63 +141,63 @@ Shader "Custom/Volumetric"
                 if (height < _CloudBaseHeight || height > _CloudTopHeight)
                     return 0.0;
                 
-                // Smooth height-based density falloff
+                // smooth height-based density falloff
                 float cloudThickness = _CloudTopHeight - _CloudBaseHeight;
                 float heightInCloud = (height - _CloudBaseHeight) / cloudThickness;
                 
-                // Smoother cloud profile
+                // smoother cloud profile
                 float heightDensity = smoothstep(0.0, 0.1, heightInCloud) * 
                                     smoothstep(1.0, 0.9, heightInCloud);
                 heightDensity = pow(heightDensity, 0.5 + _CloudSharpness);
                 
-                // Wind animation - slower and smoother
-                float time = _Time.y * _WindSpeed * 0.1; // Much slower
+                // wind animation - slower and smoother
+                float time = _Time.y * _WindSpeed * 10.1; // much slower
                 float3 windOffset = float3(_WindDirection.x, 0, _WindDirection.y) * time * 10.0;
                 float3 animatedPos = worldPos + windOffset;
                 
-                // Large scale cloud shapes - much larger scale
-                float3 noisePos = animatedPos * _NoiseScale * 0.001; // Much smaller frequency
-                float cloudShape = fbm(noisePos, 3); // Fewer octaves
+                // large scale cloud shapes - much larger scale
+                float3 noisePos = animatedPos * _NoiseScale * 0.001; // much smaller frequency
+                float cloudShape = fbm(noisePos, 3); // fewer octaves
                 
-                // Smooth coverage threshold
+                // smooth coverage threshold
                 float coverage = smoothstep(1.0 - _CloudCoverage, 1.0 - _CloudCoverage + 0.2, cloudShape);
                 
-                // Detail noise - also larger scale
-                float3 detailPos = animatedPos * _NoiseDetailScale * 0.01; // Larger scale
-                float cloudDetail = fbm(detailPos, 2); // Fewer octaves
-                cloudDetail = lerp(0.8, 1.0, cloudDetail); // Subtle detail
+                // detail noise - also larger scale
+                float3 detailPos = animatedPos * _NoiseDetailScale * 0.01; // larger scale
+                float cloudDetail = fbm(detailPos, 2); // fewer octaves
+                cloudDetail = lerp(0.8, 1.0, cloudDetail); // subtle detail
                 
-                // Combine everything smoothly
+                // combine everything smoothly
                 float finalDensity = coverage * cloudDetail * heightDensity * _CloudDensity;
                 
-                // Smooth the result
+                // smooth the result
                 finalDensity = smoothstep(0.0, 0.3, finalDensity);
                 
-                return finalDensity * _FogDensity * 50.0; // Reduced multiplier
+                return finalDensity * _FogDensity * 50.0; // reduced multiplier
             }
             
-            // Enhanced phase function for clouds
+            // enhanced phase function for clouds
             float GetCloudPhaseFunction(float3 lightDir, float3 viewDir)
             {
                 float cosTheta = dot(lightDir, -viewDir);
                 
-                // Henyey-Greenstein with strong forward scattering
-                float g1 = 0.8; // Strong forward scattering
-                float g2 = -0.2; // Slight back scattering
+                // henyey-Greenstein with strong forward scattering
+                float g1 = 0.8; // strong forward scattering
+                float g2 = -0.2; // slight back scattering
                 
                 float phase1 = (1.0 - g1 * g1) / pow(1.0 + g1 * g1 - 2.0 * g1 * cosTheta, 1.5);
                 float phase2 = (1.0 - g2 * g2) / pow(1.0 + g2 * g2 - 2.0 * g2 * cosTheta, 1.5);
                 
-                // Mix forward and back scattering
+                // mix forward and back scattering
                 float phase = lerp(phase1, phase2, 0.3);
                 
-                // Add silver lining effect
+                // add silver lining effect
                 float silverLining = pow(saturate(cosTheta), 8.0) * _SilverLining;
                 
                 return phase + silverLining;
             }
             
-            // Temporal reprojection
+            // temporal reprojection
             float2 GetPreviousScreenPos(float3 worldPos)
             {
                 float4 prevClipPos = mul(_PreviousViewProjectionMatrix, float4(worldPos, 1.0));
@@ -228,14 +227,14 @@ Shader "Custom/Volumetric"
                 float3 rayDir = normalize(i.viewVector);
                 float rayLength = min(linearDepth, _MaxDistance);
                 
-                // Debug modes
-                if (_DebugMode == 1) // Linear depth
+                // debug modes
+                if (_DebugMode == 1) // linear depth
                 {
                     float normalizedDepth = saturate(linearDepth / 200.0);
                     return fixed4(normalizedDepth, 0, 1.0 - normalizedDepth, 1);
                 }
                 
-                if (_DebugMode == 2) // Cloud shape
+                if (_DebugMode == 2) // cloud shape
                 {
                     float3 testPos = rayStart + rayDir * 50.0;
                     float density = GetCloudDensity(testPos);
@@ -243,7 +242,7 @@ Shader "Custom/Volumetric"
                     return fixed4(normalizedDensity, normalizedDensity, normalizedDensity, 1);
                 }
                 
-                if (_DebugMode == 3) // Cloud height layers
+                if (_DebugMode == 3) // cloud height layers
                 {
                     float3 testPos = rayStart + rayDir * 50.0;
                     float height = testPos.y;
@@ -252,7 +251,7 @@ Shader "Custom/Volumetric"
                     return fixed4(heightNorm, inCloudLayer ? 1 : 0, 0, 1);
                 }
                 
-                if (_DebugMode == 4) // Wind animation
+                if (_DebugMode == 4) // wind animation
                 {
                     float time = _Time.y * _WindSpeed;
                     float3 windOffset = float3(_WindDirection.x, 0, _WindDirection.y) * time;
@@ -267,24 +266,24 @@ Shader "Custom/Volumetric"
                     return sceneColor;
                 }
                 
-                // Ray marching setup with better quality for clouds
+                // ray marching setup with better quality for clouds
                 float stepSize = rayLength / float(_StepCount);
 
-                // Use blue noise instead of white noise for jittering
-                float2 noiseUV = i.uv * 512.0; // Scale for noise texture
+                // use blue noise instead of white noise for jittering
+                float2 noiseUV = i.uv * 512.0; // scale for noise texture
                 float jitter = frac(sin(dot(noiseUV, float2(12.9898, 78.233))) * 43758.5453);
                 jitter = jitter * 2.0 - 1.0; // [-1, 1] range
 
-                float3 currentPos = rayStart + rayDir * (jitter * stepSize * 0.1); // Much smaller jitter
+                float3 currentPos = rayStart + rayDir * (jitter * stepSize * 0.1); // much smaller jitter
                 float3 rayStep = rayDir * stepSize;
 
-                // Smoothed accumulation
+                // smoothed accumulation
                 float3 scatteredLight = float3(0, 0, 0);
                 float transmittance = 1.0;
                 int actualSteps = 0;
 
-                // Add temporal filtering during ray marching
-                float timeSmoothing = sin(_Time.y * 0.1) * 0.01; // Very subtle temporal variation
+                // add temporal filtering during ray marching
+                float timeSmoothing = sin(_Time.y * 0.1) * 0.01; // very subtle temporal variation
 
                 for (int step = 0; step < _StepCount; step++)
                 {
@@ -292,34 +291,34 @@ Shader "Custom/Volumetric"
                     if (currentDistance >= rayLength || transmittance < 0.01)
                         break;
                     
-                    // Sample density with slight temporal smoothing
+                    // sample density with slight temporal smoothing
                     float3 smoothedPos = currentPos + float3(timeSmoothing, 0, timeSmoothing);
                     float density = GetCloudDensity(smoothedPos);
                     
                     if (density > 0.001)
                     {
-                        // Smoother phase function
+                        // smoother phase function
                         float phase = GetCloudPhaseFunction(_LightDirection, rayDir);
                         
-                        // Smooth light attenuation
-                        float lightAttenuation = exp(-density * stepSize * 1.0); // Reduced attenuation
+                        // smooth light attenuation
+                        float lightAttenuation = exp(-density * stepSize * 1.0); // reduced attenuation
                         
-                        // Gentler lighting
+                        // gentler lighting
                         float3 ambient = _AmbientLighting * _LightColor.rgb * 0.5;
                         float3 direct = _LightColor.rgb * _LightIntensity * phase * lightAttenuation * 0.3;
                         
                         float3 lightContribution = (ambient + direct) * density * _ScatteringCoefficient;
                         
-                        // Smoother accumulation
+                        // smoother accumulation
                         scatteredLight += lightContribution * transmittance * stepSize;
-                        transmittance *= exp(-density * stepSize * 0.8); // Reduced extinction
+                        transmittance *= exp(-density * stepSize * 0.8); // reduced extinction
                     }
                     
                     currentPos += rayStep;
                     actualSteps++;
                 }
                 
-                // Debug step count
+                // debug step count
                 if (_ShowStepCount == 1)
                 {
                     float stepRatio = float(actualSteps) / float(_StepCount);
@@ -329,10 +328,10 @@ Shader "Custom/Volumetric"
                     else return fixed4(0, 1, (stepRatio - 0.75) * 4, 1);
                 }
                 
-                // Final composition
+                // final composition
                 float3 currentResult = sceneColor.rgb * transmittance + scatteredLight;
                 
-                // Temporal accumulation
+                // temporal accumulation
                 if (_UseTemporalAccumulation == 1)
                 {
                     float3 cloudCenter = rayStart + rayDir * ((_CloudBaseHeight + _CloudTopHeight) * 0.5);

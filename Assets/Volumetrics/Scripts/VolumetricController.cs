@@ -1,111 +1,259 @@
 using UnityEngine;
 
 [ExecuteInEditMode]
+[RequireComponent(typeof(Camera))]
 public class VolumetricController : MonoBehaviour
 {
-    [Header("Fog Presets")]
-    public FogType fogType = FogType.VolumetricClouds;
-    
-    [Header("Fog Settings")]
-    [Range(0f, 0.1f)]
-    public float fogDensity = 0.01f;
-    public Color fogColor = Color.gray;
-    
-    [Header("Ray Marching")]
-    [Range(8, 128)]
-    public int stepCount = 64;
-    public float maxDistance = 200f;
-    
-    [Header("Lighting")]
-    [Range(0f, 1f)]
-    public float scatteringCoefficient = 0.5f;
-    public Color lightColor = Color.white;
-    [Range(0f, 3f)]
-    public float lightIntensity = 1.0f;
-    
-    [Header("Cloud Settings")]
-    [Range(5f, 50f)]
-    public float cloudBaseHeight = 20f;
-    [Range(5f, 50f)]
-    public float cloudTopHeight = 40f;
-    [Range(0f, 1f)]
-    public float cloudCoverage = 0.6f;
-    [Range(0f, 2f)]
-    public float cloudDensity = 0.8f;
-    [Space]
-    [Range(0.1f, 5f)]
-    public float noiseScale = 1.0f;
-    [Range(0.01f, 2f)]
-    public float noiseDetailScale = 0.5f;
-    [Range(0f, 1f)]
-    public float windSpeed = 0.1f;
-    public Vector2 windDirection = new Vector2(1, 0);
-    
-    [Header("Advanced Cloud Controls")]
-    [Range(0f, 1f)]
-    public float cloudSharpness = 0.5f;
-    [Range(0f, 2f)]
-    public float silverLining = 1.0f;
-    [Range(0f, 1f)]
-    public float ambientLighting = 0.3f;
-    
-    [Header("Temporal Accumulation")]
-    public bool useTemporalAccumulation = true;
-    [Range(0f, 1f)]
-    public float temporalBlendFactor = 0.95f;
-    
-    [Header("Performance")]
-    [Range(0.25f, 1f)]
-    public float renderScale = 0.75f;
-    public bool useHalfResolution = false;
-    
-    [Header("Debug")]
-    public bool showFogOnly = false;
-    public bool showStepCount = false;
-    [Range(0, 7)]
-    public int debugMode = 0;
-    
-    public enum FogType
+    [System.Serializable]
+    public enum VolumetricPreset
     {
+        ClearSky,
+        LightClouds,
+        DenseClouds,
+        StormyClouds,
         GroundFog,
-        UniformFog,
-        HeightFog,
-        VolumetricClouds,
-        SpookyClouds
+        MorningMist,
+        Sunset,
+        Custom
     }
 
+    [Header("Quick Setup")]
+    [SerializeField] public VolumetricPreset preset = VolumetricPreset.LightClouds;
+    private VolumetricPreset lastPreset;
+
+    [Header("Basic Controls")]
+    [Range(0f, 1f)]
+    public float cloudIntensity = 0.6f;
+    [Range(0f, 2f)]
+    public float windSpeed = 2.0f;
+    public Vector2 windDirection = new Vector2(1, 1).normalized;
+    
+    [Header("Visual Settings")]
+    public Color fogColor = new Color(0.76f, 0.81f, 0.85f);
+    public Color sunColor = new Color(1f, 0.95f, 0.8f);
+    [Range(0f, 3f)]
+    public float sunIntensity = 1.5f;
+
+    [Header("Performance")]
+    [Range(32, 512)]
+    public int quality = 256;
+    [Range(0.5f, 1f)]
+    public float renderScale = 0.75f;
+    public bool enableTemporalFiltering = false;
+
+    [Header("Advanced Settings")]
+    public bool showAdvanced = false;
+    
+    [ConditionalHide("showAdvanced", true)]
+    [Range(0f, 0.1f)]
+    public float fogDensity = 0.01f;
+    
+    [ConditionalHide("showAdvanced", true)]
+    [Range(10f, 100f)]
+    public float cloudBaseHeight = 20f;
+    
+    [ConditionalHide("showAdvanced", true)]
+    [Range(10f, 100f)]
+    public float cloudTopHeight = 50f;
+    
+    [ConditionalHide("showAdvanced", true)]
+    [Range(0f, 1f)]
+    public float cloudCoverage = 0.6f;
+    
+    [ConditionalHide("showAdvanced", true)]
+    [Range(0.5f, 3f)]
+    public float noiseScale = 1.5f;
+    
+    [ConditionalHide("showAdvanced", true)]
+    [Range(0f, 1f)]
+    public float scatteringIntensity = 0.7f;
+    
+    [ConditionalHide("showAdvanced", true)]
+    [Range(0f, 2f)]
+    public float silverLining = 1.2f;
+
+    [Header("Debug")]
+    public bool debugView = false;
+    public int debugMode = 0;
+
+    // Private variables
     private Camera cam;
     private Material volumetricMaterial;
-    private Shader volumetricShader;
     private Light mainLight;
-
     private RenderTexture previousFrame;
+    private RenderTexture volumetricBuffer;
     private Matrix4x4 previousViewProjectionMatrix;
-    private bool hasValidPreviousFrame = false;
 
     void Start()
     {
+        Initialize();
+        ApplyPreset();
+    }
+
+    void OnEnable()
+    {
+        Initialize();
+    }
+
+    void Initialize()
+    {
         cam = GetComponent<Camera>();
-        cam.depthTextureMode = DepthTextureMode.Depth;
+        cam.depthTextureMode |= DepthTextureMode.Depth;
 
         mainLight = FindFirstObjectByType<Light>();
-
-        volumetricShader = Shader.Find("Custom/Volumetric");
+        
+        Shader volumetricShader = Shader.Find("Custom/Volumetric");
         if (volumetricShader != null)
         {
             volumetricMaterial = new Material(volumetricShader);
         }
+        else
+        {
+            Debug.LogError("Volumetric shader not found!");
+        }
+    }
 
-        ApplyFogPreset();
-
+    void Update()
+    {
+        if (preset != lastPreset && preset != VolumetricPreset.Custom)
+        {
+            ApplyPreset();
+            lastPreset = preset;
+        }
     }
 
     void OnDestroy()
+    {
+        ReleaseBuffers();
+    }
+
+    void OnDisable()
+    {
+        ReleaseBuffers();
+    }
+
+    void ReleaseBuffers()
     {
         if (previousFrame != null)
         {
             previousFrame.Release();
             previousFrame = null;
+        }
+        if (volumetricBuffer != null)
+        {
+            volumetricBuffer.Release();
+            volumetricBuffer = null;
+        }
+    }
+
+    void ApplyPreset()
+    {
+        switch (preset)
+        {
+            case VolumetricPreset.ClearSky:
+                cloudIntensity = 0.2f;
+                fogDensity = 0.005f;
+                cloudBaseHeight = 30f;
+                cloudTopHeight = 60f;
+                cloudCoverage = 0.3f;
+                noiseScale = 3f;
+                windSpeed = 2.0f;
+                scatteringIntensity = 0.5f;
+                silverLining = 1.5f;
+                sunIntensity = 2f;
+                fogColor = new Color(0.85f, 0.9f, 0.95f);
+                sunColor = new Color(1f, 1f, 0.9f);
+                break;
+
+            case VolumetricPreset.LightClouds:
+                cloudIntensity = 0.5f;
+                fogDensity = 0.008f;
+                cloudBaseHeight = 25f;
+                cloudTopHeight = 50f;
+                cloudCoverage = 0.5f;
+                noiseScale = 3f;
+                windSpeed = 1.5f;
+                scatteringIntensity = 0.6f;
+                silverLining = 1.2f;
+                sunIntensity = 3f;
+                fogColor = new Color(0.76f, 0.81f, 0.85f);
+                sunColor = new Color(1f, 1.0f, 1.0f);
+                break;
+
+            case VolumetricPreset.DenseClouds:
+                cloudIntensity = 0.8f;
+                fogDensity = 0.015f;
+                cloudBaseHeight = 15f;
+                cloudTopHeight = 45f;
+                cloudCoverage = 0.7f;
+                noiseScale = 3f;
+                windSpeed = 2.0f;
+                scatteringIntensity = 0.7f;
+                silverLining = 0.8f;
+                sunIntensity = 1f;
+                fogColor = new Color(0.6f, 0.65f, 0.7f);
+                sunColor = new Color(0.9f, 0.9f, 0.85f);
+                break;
+
+            case VolumetricPreset.StormyClouds:
+                cloudIntensity = 1f;
+                fogDensity = 0.025f;
+                cloudBaseHeight = 10f;
+                cloudTopHeight = 40f;
+                cloudCoverage = 0.85f;
+                noiseScale = 3f;
+                windSpeed = 2.0f;
+                scatteringIntensity = 0.8f;
+                silverLining = 0.5f;
+                sunIntensity = 0.5f;
+                fogColor = new Color(0.4f, 0.45f, 0.5f);
+                sunColor = new Color(0.7f, 0.7f, 0.7f);
+                break;
+
+            case VolumetricPreset.GroundFog:
+                cloudIntensity = 0.6f;
+                fogDensity = 0.02f;
+                cloudBaseHeight = 0f;
+                cloudTopHeight = 8f;
+                cloudCoverage = 0.8f;
+                noiseScale = 3f;
+                windSpeed = 2.0f;
+                scatteringIntensity = 0.9f;
+                silverLining = 0.2f;
+                sunIntensity = 0.8f;
+                fogColor = new Color(0.7f, 0.75f, 0.8f);
+                sunColor = new Color(0.9f, 0.85f, 0.7f);
+                break;
+
+            case VolumetricPreset.MorningMist:
+                cloudIntensity = 0.4f;
+                fogDensity = 0.0018f;
+                cloudBaseHeight = 0f;
+                cloudTopHeight = 15f;
+                cloudCoverage = 0.6f;
+                noiseScale = 3f;
+                windSpeed = 2.0f;
+                scatteringIntensity = 0.8f;
+                silverLining = 1.8f;
+                sunIntensity = 1.2f;
+                fogColor = new Color(0.9f, 0.85f, 0.7f);
+                sunColor = new Color(1f, 0.9f, 0.6f);
+                break;
+
+            case VolumetricPreset.Sunset:
+                cloudIntensity = 0.6f;
+                fogDensity = 0.01f;
+                cloudBaseHeight = 20f;
+                cloudTopHeight = 55f;
+                cloudCoverage = 0.55f;
+                noiseScale = 3f;
+                windSpeed = 2.0f;
+                scatteringIntensity = 0.9f;
+                silverLining = 2f;
+                sunIntensity = 2.5f;
+                fogColor = new Color(1f, 0.7f, 0.4f);
+                sunColor = new Color(1f, 0.6f, 0.2f);
+                break;
         }
     }
 
@@ -117,137 +265,106 @@ public class VolumetricController : MonoBehaviour
             return;
         }
 
-        int renderWidth = useHalfResolution ? source.width / 2 : Mathf.RoundToInt(source.width * renderScale);
-        int renderHeight = useHalfResolution ? source.height / 2 : Mathf.RoundToInt(source.height * renderScale);
+        int targetWidth = Mathf.RoundToInt(source.width * renderScale);
+        int targetHeight = Mathf.RoundToInt(source.height * renderScale);
 
-        RenderTexture volumetricRT = RenderTexture.GetTemporary(renderWidth, renderHeight, 0, RenderTextureFormat.ARGBHalf);
-        RenderTexture downscaledSource = null;
-
-        if (renderWidth != source.width || renderHeight != source.height)
+        if (volumetricBuffer == null || volumetricBuffer.width != targetWidth || volumetricBuffer.height != targetHeight)
         {
-            downscaledSource = RenderTexture.GetTemporary(renderWidth, renderHeight, 0, source.format);
-            Graphics.Blit(source, downscaledSource);
+            if (volumetricBuffer != null)
+                volumetricBuffer.Release();
+            
+            volumetricBuffer = new RenderTexture(targetWidth, targetHeight, 0, RenderTextureFormat.ARGBHalf);
+            volumetricBuffer.name = "VolumetricBuffer";
+            volumetricBuffer.filterMode = FilterMode.Bilinear;
+            volumetricBuffer.Create();
         }
 
-        volumetricMaterial.SetFloat("_FogDensity", fogDensity);
+        if (enableTemporalFiltering)
+        {
+            if (previousFrame == null || previousFrame.width != targetWidth || previousFrame.height != targetHeight)
+            {
+                if (previousFrame != null)
+                    previousFrame.Release();
+                
+                previousFrame = new RenderTexture(targetWidth, targetHeight, 0, RenderTextureFormat.ARGBHalf);
+                previousFrame.name = "VolumetricPreviousFrame";
+                previousFrame.Create();
+            }
+        }
+
+        SetShaderParameters();
+
+        Graphics.Blit(source, volumetricBuffer, volumetricMaterial);
+
+        if (enableTemporalFiltering && previousFrame != null)
+        {
+            Graphics.Blit(volumetricBuffer, previousFrame);
+            previousViewProjectionMatrix = cam.projectionMatrix * cam.worldToCameraMatrix;
+        }
+
+        Graphics.Blit(volumetricBuffer, destination);
+    }
+
+    void SetShaderParameters()
+    {
+        // basic parameters
+        volumetricMaterial.SetFloat("_FogDensity", fogDensity * cloudIntensity);
         volumetricMaterial.SetColor("_FogColor", fogColor);
-        volumetricMaterial.SetInt("_StepCount", stepCount);
-        volumetricMaterial.SetFloat("_MaxDistance", maxDistance);
-        volumetricMaterial.SetFloat("_ScatteringCoefficient", scatteringCoefficient);
-        volumetricMaterial.SetColor("_LightColor", lightColor);
-        volumetricMaterial.SetFloat("_LightIntensity", lightIntensity);
-
-        Matrix4x4 viewProjectionMatrix = cam.projectionMatrix * cam.worldToCameraMatrix;
-        volumetricMaterial.SetMatrix("_ViewProjectionMatrix", viewProjectionMatrix);
-        volumetricMaterial.SetMatrix("_PreviousViewProjectionMatrix", previousViewProjectionMatrix);
-        volumetricMaterial.SetMatrix("_CameraInverseProjection", cam.projectionMatrix.inverse);
-
+        volumetricMaterial.SetInt("_StepCount", quality);
+        volumetricMaterial.SetFloat("_MaxDistance", 200f);
+        
+        // cloud parameters
         volumetricMaterial.SetFloat("_CloudBaseHeight", cloudBaseHeight);
         volumetricMaterial.SetFloat("_CloudTopHeight", cloudTopHeight);
         volumetricMaterial.SetFloat("_CloudCoverage", cloudCoverage);
-        volumetricMaterial.SetFloat("_CloudDensity", cloudDensity);
+        volumetricMaterial.SetFloat("_CloudDensity", cloudIntensity);
         volumetricMaterial.SetFloat("_NoiseScale", noiseScale);
-        volumetricMaterial.SetFloat("_NoiseDetailScale", noiseDetailScale);
+        volumetricMaterial.SetFloat("_NoiseDetailScale", noiseScale * 0.5f);
+        
+        // animation
         volumetricMaterial.SetFloat("_WindSpeed", windSpeed);
-        volumetricMaterial.SetVector("_WindDirection", windDirection);
-        volumetricMaterial.SetFloat("_CloudSharpness", cloudSharpness);
+        volumetricMaterial.SetVector("_WindDirection", windDirection.normalized);
+        
+        // lighting
+        volumetricMaterial.SetFloat("_ScatteringCoefficient", scatteringIntensity);
+        volumetricMaterial.SetColor("_LightColor", sunColor);
+        volumetricMaterial.SetFloat("_LightIntensity", sunIntensity);
         volumetricMaterial.SetFloat("_SilverLining", silverLining);
-        volumetricMaterial.SetFloat("_AmbientLighting", ambientLighting);
-
+        volumetricMaterial.SetFloat("_AmbientLighting", 0.3f);
+        
+        // light direction
         if (mainLight != null)
         {
-            Vector3 lightDir = -mainLight.transform.forward;
-            volumetricMaterial.SetVector("_LightDirection", lightDir);
+            volumetricMaterial.SetVector("_LightDirection", -mainLight.transform.forward);
         }
-
-        bool canUseTemporalAccumulation = useTemporalAccumulation && previousFrame != null && hasValidPreviousFrame;
-
-        volumetricMaterial.SetInt("_UseTemporalAccumulation", canUseTemporalAccumulation ? 1 : 0);
-        volumetricMaterial.SetFloat("_TemporalBlendFactor", temporalBlendFactor);
-
-        if (canUseTemporalAccumulation)
+        
+        // matrix for reprojection
+        volumetricMaterial.SetMatrix("_CameraInverseProjection", cam.projectionMatrix.inverse);
+        volumetricMaterial.SetMatrix("_ViewProjectionMatrix", cam.projectionMatrix * cam.worldToCameraMatrix);
+        volumetricMaterial.SetMatrix("_PreviousViewProjectionMatrix", previousViewProjectionMatrix);
+        
+        // temporal
+        volumetricMaterial.SetInt("_UseTemporalAccumulation", enableTemporalFiltering && previousFrame != null ? 1 : 0);
+        volumetricMaterial.SetFloat("_TemporalBlendFactor", 0.9f);
+        if (previousFrame != null)
         {
             volumetricMaterial.SetTexture("_PreviousFrame", previousFrame);
         }
-        else
-        {
-            volumetricMaterial.SetTexture("_PreviousFrame", Texture2D.blackTexture);
-        }
-
-        volumetricMaterial.SetInt("_ShowFogOnly", showFogOnly ? 1 : 0);
-        volumetricMaterial.SetInt("_ShowStepCount", showStepCount ? 1 : 0);
+        
+        // debug
+        volumetricMaterial.SetInt("_ShowFogOnly", debugView ? 1 : 0);
         volumetricMaterial.SetInt("_DebugMode", debugMode);
-
-        volumetricMaterial.SetInt("_FogType", (int)fogType);
-        volumetricMaterial.SetFloat("_NoiseScale", noiseScale);
-
-        RenderTexture sourceToUse = downscaledSource != null ? downscaledSource : source;
-        Graphics.Blit(sourceToUse, volumetricRT, volumetricMaterial);
-
-        if (useTemporalAccumulation)
-        {
-            UpdateTemporalAccumulation(volumetricRT);
-        }
-
-        Graphics.Blit(volumetricRT, destination);
-
-        previousViewProjectionMatrix = viewProjectionMatrix;
-        hasValidPreviousFrame = true;
-
-        // Cleanup
-        RenderTexture.ReleaseTemporary(volumetricRT);
-        if (downscaledSource != null)
-            RenderTexture.ReleaseTemporary(downscaledSource);
     }
+}
 
-    void UpdateTemporalAccumulation(RenderTexture currentFrame)
+public class ConditionalHideAttribute : PropertyAttribute
+{
+    public string ConditionalSourceField;
+    public bool HideInInspector;
+
+    public ConditionalHideAttribute(string conditionalSourceField, bool hideInInspector = false)
     {
-        if (previousFrame == null || previousFrame.width != currentFrame.width || previousFrame.height != currentFrame.height)
-        {
-            if (previousFrame != null)
-            {
-                previousFrame.Release();
-            }
-
-            previousFrame = new RenderTexture(currentFrame.width, currentFrame.height, 0, RenderTextureFormat.ARGBHalf);
-            previousFrame.name = "VolumetricPreviousFrame";
-            previousFrame.Create();
-
-            Graphics.Blit(currentFrame, previousFrame);
-            hasValidPreviousFrame = false;
-            return;
-        }
-
-        Graphics.Blit(currentFrame, previousFrame);
-    }
-
-    void ApplyFogPreset()
-    {
-        switch (fogType)
-        {
-            case FogType.VolumetricClouds:
-                stepCount = 64;
-                maxDistance = 200f;
-                cloudBaseHeight = 20f;
-                cloudTopHeight = 40f;
-                cloudCoverage = 0.6f;
-                cloudDensity = 0.8f;
-                noiseScale = 1.0f;
-                windSpeed = 0.1f;
-                scatteringCoefficient = 0.7f;
-                lightIntensity = 1.5f;
-                break;
-                
-            case FogType.GroundFog:
-                stepCount = 32;
-                maxDistance = 100f;
-                cloudBaseHeight = 0f;
-                cloudTopHeight = 5f;
-                cloudCoverage = 0.8f;
-                cloudDensity = 1.0f;
-                noiseScale = 0.5f;
-                windSpeed = 0.05f;
-                break;
-        }
+        ConditionalSourceField = conditionalSourceField;
+        HideInInspector = hideInInspector;
     }
 }
